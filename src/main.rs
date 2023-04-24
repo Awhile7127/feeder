@@ -3,26 +3,29 @@ use clap::Parser;
 
 // RSS crate to build RSS files
 use rss::ChannelBuilder;
+use rss::ItemBuilder;
+use rss::Channel;
 
 // Used to check if a file exists
 use std::path::Path;
 
 // Used to write to a file
+use std::fs;
 use std::fs::File;
-use std::fs::OpenOptions;
 use std::io::Write;
+use std::io::BufReader;
 
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
 
-    #[clap(long="title", short='t', default_value="foobar", required=true)]
+    #[clap(long="title", short='t', required=true)]
     title: String,
 
-    #[clap(long="link", short='l', default_value="http://0.0.0.0", required=true)]
+    #[clap(long="link", short='l', required=true)]
     link: String,
 
-    #[clap(long="description", short='d', default_value="foobar", required=true)]
+    #[clap(long="description", short='d', required=true)]
     description: String,
 
     #[clap(long="file", short='f', required=true)]
@@ -30,46 +33,67 @@ struct Args {
 }
 
 
-// Handles building a feed
-fn build_channel(args: Args) -> String {
+// Check whether a file exists
+// If it doesn't, create it
+// and write default RSS XML to it
+fn check_file(file: String) {
+    if Path::new(&file).exists() == false {
+        println!("File not found, creating...");
 
-    // Builds the RSS data
-    let channel = ChannelBuilder::default()
-        .title(args.title)
-        .link(args.link)
-        .description(args.description)
-        .build()
-        .to_string() + "\n";
+        let _result = File::create(&file);
 
-    return channel;
-}
+        let channel = ChannelBuilder::default()
+            .build()
+            .to_string();
 
-// Handles writing to a file
-fn write_to_file(args : Args, feed: String) {
-
-    // Check if the file exists
-    // If not, create it
-    if Path::new(&args.file).exists() == false {
-        let result = File::create(&args.file);
+        write_to_file(file.clone(), channel);
     }
-
-    // Open the file in append mode
-    // to prevent overwriting
-    let mut file_ref = OpenOptions::new()
-        .append(true)
-        .open(args.file)
-        .expect("Unable to open file");
-
-    // Write the feed to the file
-    file_ref.write_all(feed.as_bytes())
-        .expect("Writing to file failed");
 
     return;
 }
 
+
+// Open the file to a buffer,
+// and add to a Channel
+fn read_file(file: String) -> Channel {
+    let f = File::open(&file)
+        .unwrap();
+    let buffer = BufReader::new(f);
+    let channel = Channel::read_from(buffer)
+        .unwrap();
+
+    return channel;
+}
+
+
+// Build an item and append to a channel
+fn build_rss(args: Args, mut channel: Channel) -> String {
+    let item = ItemBuilder::default()
+        .title(args.title)
+        .link(args.link)
+        .description(args.description)
+        .build();
+
+    // Add the built item to the feed
+    channel.items.push(item);
+
+    return channel.to_string();
+}
+
+
+// Handles writing to a file
+fn write_to_file(file: String, feed: String) {
+    fs::write(&file, feed.as_bytes());
+    
+    return;
+}
+
+
 fn main() {
     let args = Args::parse();
-    let feed = build_channel(args.clone());
-    write_to_file(args.clone(), feed);
+    check_file(args.file.clone());
+    let channel = read_file(args.file.clone());
+    let feed = build_rss(args.clone(), channel);
+    write_to_file(args.file.clone(), feed);
     println!("RSS file generated successfully");
 }
